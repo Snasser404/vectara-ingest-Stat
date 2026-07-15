@@ -1,0 +1,21 @@
+vectara:
+  corpus_id: 1
+  customer_id: 1234567890
+  reindex: false
+
+crawling:
+  crawler_type: statcan
+
+statcan_crawler:
+  # Indexes the metadata "map" of Statistics Canada data tables via the official
+  # Web Data Service (WDS) API - no bulk data is downloaded or stored.
+  include_archived: false     # also index archived (discontinued) tables
+  subject_filter: []          # keyword filter on title/subject, e.g. ["labour", "housing", "immigration"]
+  max_cubes: 0                # 0 = index the full catalog (~6,000 tables); set e.g. 100 for a quick test
+  fetch_dimensions: true      # fetch dimension names/members per table (better search; slower crawl)
+  metadata_batch_size: 10     # cubes per getCubeMetadata request
+  num_per_second: 5           # rate limit for WDS API calls
+  index_daily: false          # also index recent articles from "The Daily" (release bulletin)
+  daily_days_past: 30
+  # daily_rss_pages: ["https://www150.statcan.gc.ca/n1/dai-quo/ssi/homepage/dq-rss-eng.xml"]
+  # see https://www.statcan.gc.ca/en/rss for current feed URLs

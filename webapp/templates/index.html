@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Canada Data Map</title>
+<style>
+  :root{
+    --bg:#F3F5F8; --panel:#FFFFFF; --panel2:#EAEEF3; --line:#D4DBE4;
+    --ink:#1C2733; --muted:#5C6B7C; --faint:#8C99A9;
+    --accent:#A96F14; --accent-ink:#FFFFFF; --val:#19707A; --ok:#3E7C3A; --err:#A9412C;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0F151D; --panel:#161F2A; --panel2:#1D2835; --line:#273545;
+      --ink:#D9E1EB; --muted:#8494A7; --faint:#5F7186;
+      --accent:#E9A13B; --accent-ink:#14100A; --val:#7FD4DC; --ok:#8CC985; --err:#E58E55;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:15px;line-height:1.55}
+  .mono,code,h1,h2,.pill,button,select{font-family:ui-monospace,"SF Mono","Cascadia Code",Menlo,Consolas,monospace}
+  .wrap{max-width:1080px;margin:0 auto;padding:28px 20px 64px}
+  a{color:var(--val)}
+
+  .eyebrow{font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:600}
+  h1{font-size:clamp(22px,3.2vw,30px);font-weight:600;margin:6px 0 4px;letter-spacing:-.01em}
+  .sub{color:var(--muted);max-width:64ch;margin:0 0 20px}
+
+  .searchbar{display:flex;gap:10px;margin-bottom:8px}
+  .searchbar input{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:6px;
+       color:var(--ink);padding:11px 14px;font-size:15px}
+  .searchbar input:focus-visible,button:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  button.primary{background:var(--accent);color:var(--accent-ink);border:none;border-radius:6px;
+       padding:11px 20px;font-size:14px;font-weight:600;cursor:pointer}
+  button.ghost{background:none;border:1px solid var(--line);color:var(--muted);border-radius:6px;
+       padding:6px 13px;font-size:12.5px;cursor:pointer}
+  button.ghost:hover{border-color:var(--accent);color:var(--ink)}
+  .examples{font-size:12.5px;color:var(--faint);margin-bottom:24px}
+  .examples a{color:var(--muted);text-decoration-style:dotted;cursor:pointer;margin-right:10px}
+
+  .status{color:var(--muted);font-size:13.5px;margin:14px 0}
+  .status.err{color:var(--err)}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 18px;
+        margin-bottom:12px;cursor:pointer}
+  .card:hover{border-color:var(--accent)}
+  .card h3{margin:0 0 4px;font-size:15.5px;font-weight:600}
+  .meta{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12.5px;color:var(--muted)}
+  .pill{display:inline-block;font-size:11px;background:var(--panel2);border:1px solid var(--line);
+        border-radius:99px;padding:1px 9px;color:var(--accent)}
+  .snippet{font-size:13px;color:var(--muted);margin:6px 0 0}
+
+  /* detail view */
+  #detail{display:none}
+  .dhead{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:6px}
+  .dims{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:16px 0}
+  .dims label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+  .dims select{background:var(--panel);border:1px solid var(--line);border-radius:5px;color:var(--ink);
+       padding:7px 9px;font-size:13px;max-width:100%}
+  .chartbox{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px}
+  canvas{width:100%;height:260px;display:block}
+  table{border-collapse:collapse;width:100%;margin-top:14px;font-size:13px;font-variant-numeric:tabular-nums}
+  th,td{text-align:left;padding:6px 10px;border-bottom:1px solid var(--line)}
+  th{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+  td.num{text-align:right;font-family:ui-monospace,Menlo,Consolas,monospace}
+  .tablewrap{overflow-x:auto}
+  footer{margin-top:40px;font-size:12.5px;color:var(--faint)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">statistics canada · live via web data service</div>
+  <h1>Canada Data Map</h1>
+  <p class="sub">Search every Statistics Canada data table by meaning. Results come from your
+     Vectara corpus (metadata only); the numbers are fetched live from StatCan — nothing is stored.</p>
+
+  <div class="searchbar">
+    <input id="q" type="search" placeholder="try: unemployment rate by province…" autofocus>
+    <button class="primary" id="go">search</button>
+  </div>
+  <div class="examples">examples:
+    <a data-q="housing starts by province">housing starts</a>
+    <a data-q="immigration by census metropolitan area">immigration by city</a>
+    <a data-q="consumer price index food">food prices</a>
+    <a data-q="greenhouse gas emissions by industry">emissions</a>
+  </div>
+
+  <div id="results"></div>
+  <p class="status" id="status"></p>
+
+  <div id="detail">
+    <button class="ghost" id="back">← back to results</button>
+    <div class="dhead" style="margin-top:14px">
+      <h2 id="dTitle" style="margin:0;font-size:18px"></h2>
+      <span class="pill" id="dPid"></span>
+      <a id="dLink" target="_blank" rel="noopener">open on statcan.gc.ca ↗</a>
+    </div>
+    <p class="sub" id="dRange"></p>
+    <div class="dims" id="dims"></div>
+    <button class="primary" id="fetchData">fetch latest datapoints</button>
+    <p class="status" id="dStatus"></p>
+    <div class="chartbox" id="chartbox" style="display:none">
+      <canvas id="chart" width="1000" height="260"></canvas>
+      <div class="tablewrap"><table id="dataTable"></table></div>
+    </div>
+  </div>
+
+  <footer>Built on vectara-ingest · statcan crawler — metadata in Vectara, numbers live from
+    the <a href="https://www.statcan.gc.ca/en/developers/wds" rel="noopener">WDS API</a>.</footer>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+let currentCube = null;
+
+async function search(){
+  const q = $("q").value.trim();
+  if(!q) return;
+  showDetail(false);
+  $("results").innerHTML = "";
+  setStatus("searching…");
+  try{
+    const r = await fetch("/api/search", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body:JSON.stringify({query:q})});
+    const data = await r.json();
+    if(!r.ok) throw new Error(data.error || r.statusText);
+    if(!data.results.length){ setStatus("no matches — has the statcan crawler run against this corpus?"); return; }
+    setStatus(data.results.length + " tables found");
+    $("results").innerHTML = data.results.map((res,i)=>`
+      <div class="card" data-i="${i}">
+        <h3>${esc(res.title)}</h3>
+        <div class="meta">
+          ${res.productId ? '<span class="pill">'+esc(res.productId)+'</span>' : ''}
+          ${res.frequency ? '<span>'+esc(res.frequency)+'</span>' : ''}
+          ${res.startDate ? '<span>'+esc(res.startDate)+' → '+esc(res.endDate)+'</span>' : ''}
+          ${res.subjects ? '<span>'+esc(res.subjects)+'</span>' : ''}
+        </div>
+        ${res.snippet ? '<p class="snippet">'+esc(res.snippet)+'</p>' : ''}
+      </div>`).join("");
+    window._results = data.results;
+  }catch(e){ setStatus("search failed: " + e.message, true); }
+}
+
+async function openCube(res){
+  if(!res.productId){ window.open(res.url || "#", "_blank"); return; }
+  showDetail(true);
+  $("dTitle").textContent = res.title;
+  $("dPid").textContent = res.productId;
+  $("dLink").href = res.url || ("https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=" + res.productId + "01");
+  $("dRange").textContent = "loading table structure…";
+  $("dims").innerHTML = ""; $("chartbox").style.display = "none"; $("dStatus").textContent = "";
+  try{
+    const r = await fetch("/api/cube/" + res.productId);
+    const cube = await r.json();
+    if(!r.ok) throw new Error(cube.error || r.statusText);
+    currentCube = cube;
+    $("dRange").textContent = (cube.startDate||"?") + " → " + (cube.endDate||"?") +
+      " · pick one member per dimension, then fetch the numbers (live from StatCan):";
+    $("dims").innerHTML = cube.dimensions.map((d,i)=>`
+      <label>${esc(d.name)}
+        <select data-d="${i}">${d.members.map((m,j)=>
+          '<option value="'+m.id+'"'+(j===0?" selected":"")+'>'+esc(m.name)+'</option>').join("")}
+        </select>
+      </label>`).join("");
+  }catch(e){ $("dRange").textContent = ""; $("dStatus").textContent = "could not load table structure: " + e.message; }
+}
+
+async function fetchData(){
+  if(!currentCube) return;
+  const ids = [...document.querySelectorAll("#dims select")].map(s=>s.value);
+  const coordinate = ids.join(".");
+  $("dStatus").textContent = "fetching live datapoints…";
+  try{
+    const r = await fetch("/api/data/" + currentCube.productId + "?coordinate=" + coordinate + "&latestN=20");
+    const data = await r.json();
+    if(!r.ok) throw new Error(data.error || r.statusText);
+    const pts = data.points.filter(p => p.value !== null && p.value !== undefined);
+    if(!pts.length){ $("dStatus").textContent = "no data for this combination — try different members."; return; }
+    $("dStatus").textContent = pts.length + " datapoints, latest: " + pts[pts.length-1].refPer;
+    drawChart(pts);
+    $("dataTable").innerHTML = "<tr><th>period</th><th style='text-align:right'>value</th></tr>" +
+      pts.slice().reverse().map(p=>"<tr><td>"+esc(p.refPer)+"</td><td class='num'>"+Number(p.value).toLocaleString()+"</td></tr>").join("");
+    $("chartbox").style.display = "block";
+  }catch(e){ $("dStatus").textContent = "fetch failed: " + e.message; }
+}
+
+function drawChart(pts){
+  const cv = $("chart"), ctx = cv.getContext("2d");
+  const css = getComputedStyle(document.documentElement);
+  const line = css.getPropertyValue("--line").trim(), accent = css.getPropertyValue("--accent").trim(),
+        faint = css.getPropertyValue("--faint").trim();
+  const W = cv.width = cv.clientWidth * 2, H = cv.height = 520;
+  ctx.clearRect(0,0,W,H);
+  const vals = pts.map(p=>Number(p.value));
+  const min = Math.min(...vals), max = Math.max(...vals), pad = (max-min)||1;
+  const x = i => 60 + i*(W-90)/Math.max(pts.length-1,1);
+  const y = v => H-50 - (v-min)/(pad)*(H-100);
+  ctx.strokeStyle = line; ctx.lineWidth = 1; ctx.font = "20px ui-monospace,Menlo,monospace"; ctx.fillStyle = faint;
+  for(let g=0; g<=4; g++){
+    const gy = 50 + g*(H-100)/4;
+    ctx.beginPath(); ctx.moveTo(60,gy); ctx.lineTo(W-30,gy); ctx.stroke();
+    ctx.fillText(Number(max - g*pad/4).toLocaleString(undefined,{maximumFractionDigits:1}), 4, gy+6);
+  }
+  ctx.strokeStyle = accent; ctx.lineWidth = 4; ctx.beginPath();
+  pts.forEach((p,i)=>{ i ? ctx.lineTo(x(i),y(vals[i])) : ctx.moveTo(x(0),y(vals[0])); });
+  ctx.stroke();
+  const li = pts.length-1;
+  ctx.fillStyle = accent; ctx.beginPath(); ctx.arc(x(li),y(vals[li]),7,0,7); ctx.fill();
+  ctx.fillStyle = faint;
+  ctx.fillText(pts[0].refPer, 60, H-16);
+  const lastLabel = pts[li].refPer;
+  ctx.fillText(lastLabel, W-30-ctx.measureText(lastLabel).width, H-16);
+}
+
+function showDetail(on){ $("detail").style.display = on ? "block" : "none";
+  $("results").style.display = on ? "none" : "block"; $("status").style.display = on ? "none" : "block"; }
+function setStatus(msg, err){ const s=$("status"); s.textContent = msg; s.className = "status"+(err?" err":""); }
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+
+$("go").addEventListener("click", search);
+$("q").addEventListener("keydown", e=>{ if(e.key==="Enter") search(); });
+document.querySelector(".examples").addEventListener("click", e=>{
+  const a = e.target.closest("[data-q]"); if(!a) return;
+  $("q").value = a.dataset.q; search();
+});
+$("results").addEventListener("click", e=>{
+  const c = e.target.closest(".card"); if(!c) return;
+  openCube(window._results[Number(c.dataset.i)]);
+});
+$("back").addEventListener("click", ()=>showDetail(false));
+$("fetchData").addEventListener("click", fetchData);
+</script>
+</body>
+</html>

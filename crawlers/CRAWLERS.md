@@ -355,6 +355,36 @@ To use the slack crawler you need to create slack bot app and give it permission
 - Place the generated user token in `secrets.toml`.
   - `SLACK_USER_TOKEN= <user_token>`
 
+### Statistics Canada crawler
+
+```yaml
+...
+statcan_crawler:
+  include_archived: false
+  subject_filter: ["labour", "housing"]
+  max_cubes: 0
+  fetch_dimensions: true
+  metadata_batch_size: 10
+  num_per_second: 5
+  index_daily: false
+  daily_days_past: 30
+```
+
+The Statistics Canada crawler indexes the metadata "map" of StatCan data tables (cubes) using the official
+[Web Data Service (WDS) API](https://www.statcan.gc.ca/en/developers/wds) — no bulk data is downloaded or stored.
+Each table becomes one document containing its title, subjects, coverage period, frequency and (optionally) its
+dimensions with sample members, so the corpus becomes a semantically searchable catalog of all Canadian official
+statistics. The actual numbers can then be fetched on demand from the WDS API — see [`webapp/`](../webapp/README.md)
+for a ready-made web application that does exactly that.
+
+- `include_archived`: if true, also indexes archived (discontinued) tables.
+- `subject_filter`: optional list of keywords; only tables whose title or subject matches one of them are indexed. An empty list means the full catalog (~6,000 tables).
+- `max_cubes`: caps the number of tables indexed (0 = no cap). Useful for a quick test run.
+- `fetch_dimensions`: if true, fetches each table's dimension names and a sample of members via `getCubeMetadata`. Makes search much better (e.g. "by province" matches), at the cost of a slower crawl.
+- `metadata_batch_size`: number of tables per `getCubeMetadata` request.
+- `num_per_second`: rate limit for WDS API calls.
+- `index_daily`: if true, also indexes recent articles from [The Daily](https://www150.statcan.gc.ca/n1/dai-quo/index-eng.htm) (StatCan's official release bulletin) via RSS, going back `daily_days_past` days. The feed URLs can be overridden with `daily_rss_pages` (see [statcan.gc.ca/en/rss](https://www.statcan.gc.ca/en/rss) for current feeds).
+
 ## Other crawlers:
 
 - `Edgar` crawler: crawls SEC Edgar annual reports (10-K) and indexes those into Vectara

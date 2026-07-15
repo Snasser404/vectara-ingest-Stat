@@ -24,6 +24,7 @@ Vectara is the trusted GenAI platform providing simple [APIs](https://docs.vecta
 * Notion notes
 * Docusaurus documentation sites
 * Slack
+* Statistics Canada (metadata catalog via the WDS API, with a companion [web app](webapp/README.md))
 * And many others...
 
 For more information about this repository, see [Code Organization](#code-organization) and [Crawling](#crawling).
