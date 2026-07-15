@@ -381,6 +381,7 @@ for a ready-made web application that does exactly that.
 - `subject_filter`: optional list of keywords; only tables whose title or subject matches one of them are indexed. An empty list means the full catalog (~6,000 tables).
 - `max_cubes`: caps the number of tables indexed (0 = no cap). Useful for a quick test run.
 - `fetch_dimensions`: if true, fetches each table's dimension names and a sample of members via `getCubeMetadata`. Makes search much better (e.g. "by province" matches), at the cost of a slower crawl.
+- `index_data_snapshots`: if true (and `fetch_dimensions` is on), also embeds each table's latest reported values — one series per member of the first dimension (usually Geography, so e.g. one per province) over the last `snapshot_periods` periods. This puts real numbers into the corpus so generated answers can cite them. `snapshot_members` caps how many series per table (13 covers all provinces and territories).
 - `metadata_batch_size`: number of tables per `getCubeMetadata` request.
 - `num_per_second`: rate limit for WDS API calls.
 - `index_daily`: if true, also indexes recent articles from [The Daily](https://www150.statcan.gc.ca/n1/dai-quo/index-eng.htm) (StatCan's official release bulletin) via RSS, going back `daily_days_past` days. The feed URLs can be overridden with `daily_rss_pages` (see [statcan.gc.ca/en/rss](https://www.statcan.gc.ca/en/rss) for current feeds).

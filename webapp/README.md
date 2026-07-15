@@ -1,12 +1,18 @@
 # Canada Data Map — web app
 
-A small web application for exploring a Vectara corpus built by the `statcan` crawler.
+Ask anything about Canada's official statistics and get a grounded, cited answer.
 
-- **Search** all of Statistics Canada's data tables by meaning (semantic search over the
-  metadata catalog in your Vectara corpus).
-- **Drill in** to any table: pick a member for each dimension (geography, category, …).
-- **Fetch the numbers live** from StatCan's Web Data Service (WDS) API — chart + table of the
+- **Ask a question** ("how has unemployment changed across provinces?") — the app retrieves
+  the most relevant content from your Vectara corpus and uses Vectara's generative
+  summarizer to produce an answer with `[n]` citations you can click.
+- **Browse tables** — semantic search over the full StatCan catalog.
+- **Drill in** to any cited table: pick a member per dimension (geography, category, …) and
+  **fetch the numbers live** from StatCan's Web Data Service (WDS) API — chart + table of the
   latest datapoints. Nothing is downloaded or stored locally.
+
+Answer quality depends on what the crawler ingested: enable `index_data_snapshots` (real
+numbers) and `index_daily` (StatCan's own analysis articles) in `config/statcan.yaml` for
+genuinely insightful answers rather than catalog descriptions.
 
 ## Prerequisites
 

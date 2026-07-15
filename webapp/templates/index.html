@@ -37,8 +37,16 @@
   button.ghost{background:none;border:1px solid var(--line);color:var(--muted);border-radius:6px;
        padding:6px 13px;font-size:12.5px;cursor:pointer}
   button.ghost:hover{border-color:var(--accent);color:var(--ink)}
-  .examples{font-size:12.5px;color:var(--faint);margin-bottom:24px}
-  .examples a{color:var(--muted);text-decoration-style:dotted;cursor:pointer;margin-right:10px}
+  .examples{font-size:12.5px;color:var(--faint);margin-bottom:24px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .examples a{color:var(--muted);text-decoration-style:dotted;cursor:pointer}
+  .modes{display:inline-flex;gap:6px;margin-right:8px}
+  .modes button[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
+
+  #answer{background:var(--panel);border:1px solid var(--accent);border-radius:8px;
+          padding:18px 20px;margin-bottom:18px;font-size:15px}
+  #answer .alabel{font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--accent);
+          font-family:ui-monospace,Menlo,Consolas,monospace;margin-bottom:8px}
+  #answer sup a{color:var(--val);text-decoration:none;font-weight:600;cursor:pointer}
 
   .status{color:var(--muted);font-size:13.5px;margin:14px 0}
   .status.err{color:var(--err)}
@@ -71,22 +79,29 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="eyebrow">statistics canada · live via web data service</div>
+  <div class="eyebrow">statistics canada · answers grounded in the crawled corpus</div>
   <h1>Canada Data Map</h1>
-  <p class="sub">Search every Statistics Canada data table by meaning. Results come from your
-     Vectara corpus (metadata only); the numbers are fetched live from StatCan — nothing is stored.</p>
+  <p class="sub">Ask anything about Canada's official statistics. The answer is generated from
+     what the crawler ingested into your vector database — table catalog, latest values, and
+     StatCan's own analysis — with the sources listed so you can drill into live numbers.</p>
 
   <div class="searchbar">
-    <input id="q" type="search" placeholder="try: unemployment rate by province…" autofocus>
-    <button class="primary" id="go">search</button>
+    <input id="q" type="search" placeholder="ask: how has unemployment changed across provinces?" autofocus>
+    <button class="primary" id="go">ask</button>
   </div>
-  <div class="examples">examples:
-    <a data-q="housing starts by province">housing starts</a>
-    <a data-q="immigration by census metropolitan area">immigration by city</a>
-    <a data-q="consumer price index food">food prices</a>
-    <a data-q="greenhouse gas emissions by industry">emissions</a>
+  <div class="examples">
+    <span class="modes">
+      <button class="ghost" id="modeAsk" aria-pressed="true">ask a question</button>
+      <button class="ghost" id="modeBrowse" aria-pressed="false">browse tables</button>
+    </span>
+    try:
+    <a data-q="how expensive has food become in the last year?">food prices</a>
+    <a data-q="which provinces are growing fastest in population?">population growth</a>
+    <a data-q="how has unemployment changed across provinces?">unemployment</a>
+    <a data-q="what is happening with housing starts?">housing</a>
   </div>
 
+  <div id="answer" style="display:none"></div>
   <div id="results"></div>
   <p class="status" id="status"></p>
 
@@ -115,23 +130,42 @@
 "use strict";
 const $ = id => document.getElementById(id);
 let currentCube = null;
+let mode = "answer";   // "answer" = ask a question (RAG), "search" = browse tables
+
+function setMode(m){
+  mode = m;
+  $("modeAsk").setAttribute("aria-pressed", String(m==="answer"));
+  $("modeBrowse").setAttribute("aria-pressed", String(m==="search"));
+  $("q").placeholder = m==="answer" ? "ask: how has unemployment changed across provinces?"
+                                    : "browse: unemployment rate by province…";
+  $("go").textContent = m==="answer" ? "ask" : "search";
+}
+
+function renderAnswer(text){
+  // turn [1]-style citations into links that jump to the matching source card
+  const html = esc(text).replace(/\[(\d+)\]/g,
+    '<sup><a data-cite="$1">[$1]</a></sup>');
+  $("answer").innerHTML = '<div class="alabel">answer — generated from your corpus</div>' + html;
+  $("answer").style.display = "block";
+}
 
 async function search(){
   const q = $("q").value.trim();
   if(!q) return;
   showDetail(false);
-  $("results").innerHTML = "";
-  setStatus("searching…");
+  $("results").innerHTML = ""; $("answer").style.display = "none";
+  setStatus(mode==="answer" ? "thinking… (retrieving sources and generating an answer)" : "searching…");
   try{
     const r = await fetch("/api/search", {method:"POST",
-      headers:{"Content-Type":"application/json"}, body:JSON.stringify({query:q})});
+      headers:{"Content-Type":"application/json"}, body:JSON.stringify({query:q, mode:mode})});
     const data = await r.json();
     if(!r.ok) throw new Error(data.error || r.statusText);
     if(!data.results.length){ setStatus("no matches — has the statcan crawler run against this corpus?"); return; }
-    setStatus(data.results.length + " tables found");
+    if(mode==="answer" && data.answer) renderAnswer(data.answer);
+    setStatus(mode==="answer" ? "sources (click one to see live numbers):" : data.results.length + " tables found");
     $("results").innerHTML = data.results.map((res,i)=>`
-      <div class="card" data-i="${i}">
-        <h3>${esc(res.title)}</h3>
+      <div class="card" data-i="${i}" id="src-${i+1}">
+        <h3>${mode==="answer" ? '<span class="pill">'+(i+1)+'</span> ' : ''}${esc(res.title)}</h3>
         <div class="meta">
           ${res.productId ? '<span class="pill">'+esc(res.productId)+'</span>' : ''}
           ${res.frequency ? '<span>'+esc(res.frequency)+'</span>' : ''}
@@ -216,12 +250,23 @@ function drawChart(pts){
 }
 
 function showDetail(on){ $("detail").style.display = on ? "block" : "none";
-  $("results").style.display = on ? "none" : "block"; $("status").style.display = on ? "none" : "block"; }
+  $("results").style.display = on ? "none" : "block"; $("status").style.display = on ? "none" : "block";
+  if(on) $("answer").style.display = "none";
+  else if($("answer").innerHTML && mode==="answer") $("answer").style.display = "block"; }
 function setStatus(msg, err){ const s=$("status"); s.textContent = msg; s.className = "status"+(err?" err":""); }
 function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 
 $("go").addEventListener("click", search);
 $("q").addEventListener("keydown", e=>{ if(e.key==="Enter") search(); });
+$("modeAsk").addEventListener("click", ()=>setMode("answer"));
+$("modeBrowse").addEventListener("click", ()=>setMode("search"));
+$("answer").addEventListener("click", e=>{
+  const a = e.target.closest("[data-cite]"); if(!a) return;
+  const card = $("src-" + a.dataset.cite);
+  if(card){ card.scrollIntoView({behavior:"smooth", block:"center"});
+            card.style.borderColor = "var(--accent)";
+            setTimeout(()=>{ card.style.borderColor = ""; }, 1600); }
+});
 document.querySelector(".examples").addEventListener("click", e=>{
   const a = e.target.closest("[data-q]"); if(!a) return;
   $("q").value = a.dataset.q; search();

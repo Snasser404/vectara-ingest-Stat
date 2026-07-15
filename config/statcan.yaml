@@ -13,9 +13,12 @@ statcan_crawler:
   subject_filter: []          # keyword filter on title/subject, e.g. ["labour", "housing", "immigration"]
   max_cubes: 0                # 0 = index the full catalog (~6,000 tables); set e.g. 100 for a quick test
   fetch_dimensions: true      # fetch dimension names/members per table (better search; slower crawl)
+  index_data_snapshots: true  # embed each table's latest values (e.g. per province) so answers contain real numbers
+  snapshot_members: 13        # series per table: members of the first dimension (13 covers all provinces/territories)
+  snapshot_periods: 8         # how many recent periods per series
   metadata_batch_size: 10     # cubes per getCubeMetadata request
   num_per_second: 5           # rate limit for WDS API calls
-  index_daily: false          # also index recent articles from "The Daily" (release bulletin)
-  daily_days_past: 30
+  index_daily: true           # also index articles from "The Daily" - StatCan's own analysis, key for insightful answers
+  daily_days_past: 90
   # daily_rss_pages: ["https://www150.statcan.gc.ca/n1/dai-quo/ssi/homepage/dq-rss-eng.xml"]
   # see https://www.statcan.gc.ca/en/rss for current feed URLs

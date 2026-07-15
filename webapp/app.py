@@ -58,17 +58,23 @@ def search():
     if not query:
         return jsonify({"error": "empty query"}), 400
     num_results = min(int(body.get("num_results", 10)), 25)
+    mode = body.get("mode", "search")   # "answer" = RAG: retrieve + generate a grounded summary
 
-    payload = {
-        "query": [{
-            "query": query,
-            "numResults": num_results,
-            "corpusKey": [{
-                "customerId": cfg["customer_id"],
-                "corpusId": cfg["corpus_id"],
-            }],
-        }]
+    query_spec = {
+        "query": query,
+        "numResults": num_results,
+        "corpusKey": [{
+            "customerId": cfg["customer_id"],
+            "corpusId": cfg["corpus_id"],
+        }],
     }
+    if mode == "answer":
+        query_spec["summary"] = [{
+            "responseLang": "eng",
+            "maxSummarizedResults": 7,
+            "summarizerPromptName": "vectara-summary-ext-v1.2.0",
+        }]
+    payload = {"query": [query_spec]}
     response = requests.post(
         f"https://{cfg['endpoint']}/v1/query",
         headers={
@@ -93,9 +99,12 @@ def search():
         doc_index = item.get("documentIndex", 0)
         doc = documents[doc_index] if doc_index < len(documents) else {}
         doc_id = doc.get("id", "")
-        if doc_id in seen:
-            continue
-        seen.add(doc_id)
+        # in answer mode, keep every hit in order: the summary's [n] citations
+        # refer to 1-based positions in this list
+        if mode != "answer":
+            if doc_id in seen:
+                continue
+            seen.add(doc_id)
         meta = {m["name"]: m["value"] for m in doc.get("metadata", []) if "name" in m}
         results.append({
             "id": doc_id,
@@ -110,7 +119,16 @@ def search():
             "endDate": meta.get("endDate", ""),
             "source": meta.get("source", ""),
         })
-    return jsonify({"results": results})
+
+    answer = ""
+    if mode == "answer":
+        summaries = response_set.get("summary", [])
+        if summaries:
+            answer = summaries[0].get("text", "")
+        if not answer:
+            answer = ("(Generated answers are not enabled on this Vectara account/corpus - "
+                      "showing the matching sources instead.)")
+    return jsonify({"answer": answer, "results": results})
 
 
 @app.route("/api/cube/<int:product_id>")

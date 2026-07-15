@@ -31,6 +31,9 @@ class StatcanCrawler(Crawler):
         self.subject_filter = [str(s).lower() for s in c.get("subject_filter", [])]
         self.max_cubes = int(c.get("max_cubes", 0))
         self.fetch_dimensions = c.get("fetch_dimensions", True)
+        self.index_data_snapshots = c.get("index_data_snapshots", False)
+        self.snapshot_members = int(c.get("snapshot_members", 13))
+        self.snapshot_periods = int(c.get("snapshot_periods", 8))
         self.metadata_batch_size = int(c.get("metadata_batch_size", 10))
         self.delay = 1.0 / float(c.get("num_per_second", 5))
         self.index_daily = c.get("index_daily", False)
@@ -83,11 +86,13 @@ class StatcanCrawler(Crawler):
                 pid = int(obj.get("productId", 0))
                 dims = []
                 for dim in obj.get("dimension", []):
-                    members = [m.get("memberNameEn", "") for m in dim.get("member", [])]
+                    members = [(m.get("memberId"), m.get("memberNameEn", "")) for m in dim.get("member", [])]
                     dims.append({
                         "name": dim.get("dimensionNameEn", ""),
                         "num_members": len(members),
-                        "members_sample": [m for m in members if m][:25],
+                        "members_sample": [name for _, name in members if name][:25],
+                        "members": members[:max(self.snapshot_members, 1)],
+                        "first_member_id": members[0][0] if members else None,
                     })
                 if pid:
                     dimensions[pid] = dims
@@ -96,8 +101,50 @@ class StatcanCrawler(Crawler):
         time.sleep(self.delay)
         return dimensions
 
+    def _get_snapshot_text(self, pid: int, dims: List[Dict[str, Any]]) -> str:
+        """
+        Fetch the latest reported values for one cube so real numbers are embedded
+        alongside the metadata. We take the members of the first dimension (usually
+        Geography, so e.g. one series per province) crossed with the first member of
+        every other dimension, and pull the last few periods for each.
+        """
+        if not dims or not dims[0].get("members"):
+            return ""
+        base = [str(d.get("first_member_id") or 1) for d in dims]
+        base = (base + ["0"] * 10)[:10]
+        requests_payload = []
+        member_names = {}
+        for member_id, member_name in dims[0]["members"][:self.snapshot_members]:
+            coordinate = [str(member_id)] + base[1:]
+            coordinate_str = ".".join(coordinate)
+            requests_payload.append({"productId": pid, "coordinate": coordinate_str,
+                                     "latestN": self.snapshot_periods})
+            member_names[coordinate_str] = member_name
+        try:
+            results = self._wds_post("getDataFromCubePidCoordAndLatestNPeriods", requests_payload)
+        except Exception as e:
+            logging.info(f"No data snapshot for cube {pid}: {e}")
+            return ""
+        time.sleep(self.delay)
+
+        lines = []
+        for result in results if isinstance(results, list) else []:
+            if result.get("status") != "SUCCESS":
+                continue
+            obj = result.get("object", {})
+            coordinate_str = str(obj.get("coordinate", ""))
+            points = [p for p in obj.get("vectorDataPoint", []) if p.get("value") is not None]
+            if not points:
+                continue
+            series = ", ".join(f"{p.get('refPer', '')}: {p.get('value')}" for p in points)
+            name = member_names.get(coordinate_str, coordinate_str)
+            lines.append(f"{name} — {series}.")
+        if not lines:
+            return ""
+        return f"Latest reported values by {dims[0]['name']} (as of crawl date): " + " ".join(lines)
+
     def _cube_to_document(self, cube: Dict[str, Any], code_sets: Dict[str, Dict[str, str]],
-                          dims: List[Dict[str, Any]]) -> Dict[str, Any]:
+                          dims: List[Dict[str, Any]], snapshot_text: str = "") -> Dict[str, Any]:
         pid = str(cube.get("productId", ""))
         title = cube.get("cubeTitleEn", "") or f"StatCan table {pid}"
         subjects = [code_sets["subject"].get(str(s), str(s)) for s in cube.get("subjectCode", []) or []]
@@ -121,6 +168,8 @@ class StatcanCrawler(Crawler):
             if dim["members_sample"]:
                 text += " Includes: " + ", ".join(dim["members_sample"]) + "."
             sections.append({"title": f"dimension: {dim['name']}", "text": text})
+        if snapshot_text:
+            sections.append({"title": "latest values", "text": snapshot_text})
 
         metadata = {
             "source": "statcan",
@@ -168,7 +217,11 @@ class StatcanCrawler(Crawler):
                 dims_by_pid = self._get_dimensions(pids)
             for cube in batch:
                 pid = int(cube.get("productId", 0))
-                document = self._cube_to_document(cube, code_sets, dims_by_pid.get(pid, []))
+                dims = dims_by_pid.get(pid, [])
+                snapshot_text = ""
+                if self.index_data_snapshots and dims:
+                    snapshot_text = self._get_snapshot_text(pid, dims)
+                document = self._cube_to_document(cube, code_sets, dims, snapshot_text)
                 try:
                     if self.indexer.index_document(document):
                         count += 1
